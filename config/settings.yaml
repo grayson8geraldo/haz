@@ -1,0 +1,198 @@
+# ============================================================
+# Gas Futures Trader — Master Configuration
+# ============================================================
+# DISCLAIMER: Торговля фьючерсами связана с высоким риском.
+# Данная система предназначена для образовательных целей.
+# Используйте Paper Trading перед реальной торговлей.
+# ============================================================
+
+account:
+  initial_capital: 200.0        # Начальный депозит USD
+  target_capital: 100000.0      # Целевой капитал USD
+  currency: USD
+  mode: paper                   # paper | live
+
+broker:
+  provider: ibkr                # ibkr | rithmic
+  host: 127.0.0.1
+  port: 7497                    # 7497=paper, 7496=live
+  client_id: 1
+  account_id: ""                # Заполнить из .env
+
+instrument:
+  symbol: NG                    # NYMEX Natural Gas
+  exchange: NYMEX
+  sec_type: FUT
+  contract_month: auto          # auto = ближайший ликвидный
+  tick_size: 0.001              # $0.001 per MMBtu
+  tick_value: 10.0              # $10 per tick
+  contract_size: 10000          # 10,000 MMBtu
+  point_value: 10000.0          # $10,000 per $1 move
+  margin_initial: 2200.0        # Начальная маржа (проверять у брокера)
+  margin_maintenance: 2000.0
+
+  # Micro Natural Gas (QG) — для малых депозитов
+  micro:
+    symbol: QG
+    exchange: NYMEX
+    sec_type: FUT
+    tick_size: 0.005
+    tick_value: 12.50
+    contract_size: 2500
+    point_value: 2500.0
+    margin_initial: 550.0
+    margin_maintenance: 500.0
+
+data:
+  # Рыночные данные
+  market:
+    provider: ibkr               # ibkr | polygon | tradingview
+    timeframes: [1m, 5m, 15m, 1h, 4h, 1d]
+    history_days: 365
+    use_rth: false               # Regular trading hours only
+
+  # EIA Weekly Natural Gas Storage Report
+  eia:
+    api_key: ""                  # Заполнить из .env
+    series_id: "NG.NW2_EPG0_SWO_R48_BCF.W"
+    report_day: thursday
+    report_time: "10:30"
+    timezone: US/Eastern
+
+  # Погода / HDD
+  weather:
+    provider: open_meteo         # open_meteo | noaa
+    cities:
+      - {name: "New York", lat: 40.71, lon: -74.01}
+      - {name: "Chicago", lat: 41.88, lon: -87.63}
+      - {name: "Houston", lat: 29.76, lon: -95.37}
+      - {name: "Boston", lat: 42.36, lon: -71.06}
+    hdd_base_temp: 65            # °F
+    forecast_days: 14
+
+  # LNG / Производство
+  lng:
+    feed_gas_url: "https://api.eia.gov/v2/natural-gas/sum/liq/"
+    production_url: "https://api.eia.gov/v2/natural-gas/prod/sum/"
+
+signals:
+  # Технический анализ
+  technical:
+    enabled: true
+    weight: 0.30
+    rsi:
+      period: 14
+      overbought: 70
+      oversold: 30
+    vwap:
+      enabled: true
+    atr:
+      period: 14
+    bollinger:
+      period: 20
+      std_dev: 2.0
+    ema:
+      fast: 9
+      slow: 21
+
+  # Фундаментальный анализ
+  fundamental:
+    enabled: true
+    weight: 0.25
+    storage_surprise_threshold: 5  # BCF отклонение от прогноза
+    hdd_deviation_threshold: 10    # % отклонение HDD от нормы
+
+  # ML-модель
+  ml:
+    enabled: true
+    weight: 0.30
+    model: xgboost               # xgboost | lstm
+    features:
+      - rsi_14
+      - atr_14
+      - bb_width
+      - vwap_distance
+      - hdd_deviation
+      - storage_surprise
+      - volume_ratio
+      - day_of_week
+      - month
+    retrain_interval_days: 7
+    min_confidence: 0.65
+
+  # Сезонность
+  seasonality:
+    enabled: true
+    weight: 0.15
+    injection_season: [apr, oct]  # Апрель-Октябрь
+    withdrawal_season: [nov, mar] # Ноябрь-Март
+    calendar_spread: true
+
+risk:
+  # Размер позиции (ATR-based)
+  position_sizing:
+    method: atr                  # atr | fixed | kelly
+    risk_per_trade_pct: 1.0      # % капитала на сделку
+    max_risk_per_trade_pct: 2.0
+    atr_multiplier_sl: 2.0       # Stop-loss = ATR × множитель
+    atr_multiplier_tp: 3.0       # Take-profit = ATR × множитель
+
+  # Дневные лимиты
+  daily_limits:
+    max_daily_loss_pct: 3.0      # Макс. дневной убыток %
+    max_drawdown_pct: 10.0       # Макс. просадка от пика %
+    max_open_positions: 1        # Макс. одновременных позиций
+    max_trades_per_day: 5
+
+  # EIA Kill Switch
+  eia_kill_switch:
+    enabled: true
+    pause_minutes_before: 15     # Пауза за 15 мин до отчёта
+    pause_minutes_after: 10      # Пауза 10 мин после отчёта
+    close_positions_before: false # Закрывать позиции перед отчётом
+
+  # Trailing stop
+  trailing_stop:
+    enabled: true
+    activation_pct: 1.5          # Активация при +1.5%
+    trail_pct: 0.8               # Трейл 0.8%
+
+execution:
+  order_type: limit              # limit | market
+  limit_offset_ticks: 2          # Отступ от цены для лимитных ордеров
+  timeout_seconds: 30            # Таймаут исполнения
+  retry_attempts: 3
+  slippage_max_ticks: 3          # Макс. проскальзывание
+
+monitoring:
+  telegram:
+    enabled: true
+    bot_token: ""                # Заполнить из .env
+    chat_id: ""                  # Заполнить из .env
+    alerts:
+      - trade_open
+      - trade_close
+      - daily_pnl
+      - drawdown_warning
+      - eia_report
+      - error
+
+  dashboard:
+    enabled: true
+    port: 8501
+    refresh_seconds: 5
+
+backtest:
+  start_date: "2020-01-01"
+  end_date: "2025-12-31"
+  initial_capital: 200.0
+  commission_per_trade: 2.50     # Round-trip комиссия
+  slippage_ticks: 1
+  walk_forward:
+    train_months: 6
+    test_months: 2
+    step_months: 1
+  optimization:
+    engine: optuna               # optuna | grid
+    n_trials: 200
+    metric: sortino              # sharpe | sortino | calmar

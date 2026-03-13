@@ -12,4 +12,5 @@ models/*.pkl
 models/*.joblib
 logs/
 *.log
+data/paper_state.json
 .DS_Store

@@ -46,7 +46,10 @@ instrument:
 data:
   # Рыночные данные
   market:
-    provider: ibkr               # ibkr | polygon | tradingview
+    provider: auto               # auto | ibkr | yfinance | synthetic
+    # auto = пробует IBKR → yfinance → synthetic
+    # yfinance = бесплатные реальные данные (задержка 15 мин)
+    yfinance_ticker: "NG=F"      # Yahoo Finance тикер для Henry Hub NG
     timeframes: [1m, 5m, 15m, 1h, 4h, 1d]
     history_days: 365
     use_rth: false               # Regular trading hours only

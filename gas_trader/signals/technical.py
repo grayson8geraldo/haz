@@ -160,27 +160,35 @@ class TechnicalSignal:
 
     def add_indicators_to_df(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add all indicator columns to DataFrame for ML features."""
-        close = df["close"]
-        high = df["high"]
-        low = df["low"]
-
         df = df.copy()
-        df["rsi_14"] = self._rsi(close, self.rsi_period)
-        df["atr_14"] = self._atr(high, low, close, self.atr_period)
+
+        # Ensure clean numeric data with reset index alignment
+        close = df["close"].astype(float)
+        high = df["high"].astype(float)
+        low = df["low"].astype(float)
+
+        df["rsi_14"] = self._rsi(close, self.rsi_period).values
+        df["atr_14"] = self._atr(high, low, close, self.atr_period).values
 
         bb_mid = close.rolling(self.bb_period).mean()
         bb_std = close.rolling(self.bb_period).std()
-        df["bb_upper"] = bb_mid + self.bb_std * bb_std
-        df["bb_lower"] = bb_mid - self.bb_std * bb_std
-        df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / bb_mid
+        df["bb_upper"] = (bb_mid + self.bb_std * bb_std).values
+        df["bb_lower"] = (bb_mid - self.bb_std * bb_std).values
+        bb_mid_vals = bb_mid.values
+        bb_mid_vals[bb_mid_vals == 0] = np.nan
+        df["bb_width"] = (df["bb_upper"].values - df["bb_lower"].values) / bb_mid_vals
 
         if "vwap" in df.columns:
-            df["vwap_distance"] = (close - df["vwap"]) / df["vwap"] * 100
+            vwap = df["vwap"].values.astype(float)
+            vwap[vwap == 0] = np.nan
+            df["vwap_distance"] = (close.values - vwap) / vwap * 100
         else:
             df["vwap_distance"] = 0.0
 
-        df["ema_fast"] = close.ewm(span=self.ema_fast, adjust=False).mean()
-        df["ema_slow"] = close.ewm(span=self.ema_slow, adjust=False).mean()
-        df["volume_ratio"] = df["volume"] / df["volume"].rolling(20).mean()
+        df["ema_fast"] = close.ewm(span=self.ema_fast, adjust=False).mean().values
+        df["ema_slow"] = close.ewm(span=self.ema_slow, adjust=False).mean().values
+        vol_ma = df["volume"].rolling(20).mean().values
+        vol_ma[vol_ma == 0] = np.nan
+        df["volume_ratio"] = df["volume"].values / vol_ma
 
         return df.dropna()

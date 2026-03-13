@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import time
+import traceback
 
 from loguru import logger
 
@@ -146,7 +147,7 @@ class GasFuturesTrader:
                 self.stop()
                 break
             except Exception as e:
-                logger.error(f"Trading loop error: {e}")
+                logger.error(f"Trading loop error: {e}\n{traceback.format_exc()}")
                 self.telegram.alert_error(str(e))
                 time.sleep(30)
 

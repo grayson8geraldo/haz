@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import traceback
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -76,15 +77,31 @@ class SignalEngine:
 
         # Add indicators for ML
         df_with_indicators = self.technical.add_indicators_to_df(df)
+        if df_with_indicators.empty or len(df_with_indicators) < 30:
+            return self._flat_signal(reason="Insufficient data after indicators")
 
         # 1. Technical analysis
         tech: TechIndicators = self.technical.compute(df)
 
         # 2. Fundamental analysis
-        fund: FundamentalIndicators = self.fundamental.compute(eia, weather, lng)
+        try:
+            fund: FundamentalIndicators = self.fundamental.compute(eia, weather, lng)
+        except Exception as e:
+            logger.warning(f"Fundamental signal error: {e}")
+            fund = FundamentalIndicators(
+                storage_surprise_bcf=0, storage_signal=0, hdd_deviation_pct=0,
+                hdd_signal=0, supply_demand_signal=0, composite_signal=0, confidence=0,
+            )
 
         # 3. ML prediction
-        ml_pred: MLPrediction = self.ml.predict(df_with_indicators)
+        try:
+            ml_pred: MLPrediction = self.ml.predict(df_with_indicators)
+        except Exception as e:
+            logger.warning(f"ML signal error: {e}")
+            ml_pred = MLPrediction(
+                direction=0, probability=0.5, signal=0, confidence=0,
+                model_name=self.ml.model_type,
+            )
 
         # 4. Seasonality
         seas: SeasonalityIndicators = self.seasonality.compute()

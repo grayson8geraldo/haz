@@ -170,6 +170,25 @@ class MarketDataFeed:
     # ------------------------------------------------------------------
     # Yahoo Finance (бесплатные реальные данные)
     # ------------------------------------------------------------------
+    @staticmethod
+    def _clean_yfinance_df(hist: pd.DataFrame) -> pd.DataFrame:
+        """Clean yfinance DataFrame: flatten MultiIndex columns, remove dupes."""
+        # Newer yfinance returns MultiIndex columns: ('Open', 'NG=F')
+        if isinstance(hist.columns, pd.MultiIndex):
+            hist.columns = hist.columns.get_level_values(0)
+
+        # Remove duplicate column names (can happen after flattening)
+        hist = hist.loc[:, ~hist.columns.duplicated()]
+
+        # Remove duplicate index entries
+        hist = hist[~hist.index.duplicated(keep="last")]
+
+        # Remove timezone info for consistency
+        if hist.index.tz is not None:
+            hist.index = hist.index.tz_localize(None)
+
+        return hist
+
     def _check_yfinance(self) -> bool:
         """Check if yfinance is available and can fetch NG data."""
         try:
@@ -180,6 +199,7 @@ class MarketDataFeed:
             if hist.empty:
                 logger.warning(f"yfinance: no data for {self.yf_ticker}")
                 return False
+            hist = self._clean_yfinance_df(hist)
             logger.info(
                 f"yfinance OK: {self.yf_ticker} last price = "
                 f"${hist['Close'].iloc[-1]:.4f}"
@@ -218,15 +238,21 @@ class MarketDataFeed:
                 logger.warning(f"yfinance returned empty data for {self.yf_ticker}")
                 return self._generate_synthetic(days, timeframe)
 
-            # Normalize column names
+            # Clean: flatten MultiIndex, remove dupes, strip tz
+            hist = self._clean_yfinance_df(hist)
+
+            # Extract OHLCV as plain numpy arrays to avoid any index issues
             df = pd.DataFrame({
-                "open": hist["Open"],
-                "high": hist["High"],
-                "low": hist["Low"],
-                "close": hist["Close"],
-                "volume": hist["Volume"].astype(float),
-            })
+                "open": hist["Open"].values,
+                "high": hist["High"].values,
+                "low": hist["Low"].values,
+                "close": hist["Close"].values,
+                "volume": hist["Volume"].values.astype(float),
+            }, index=hist.index)
             df.index.name = "datetime"
+
+            # Drop rows with NaN prices
+            df = df.dropna(subset=["close"])
 
             # Resample 4h from 1h if needed
             if timeframe == "4h" and cfg["interval"] == "1h":

@@ -174,12 +174,12 @@ class TechnicalSignal:
         bb_std = close.rolling(self.bb_period).std()
         df["bb_upper"] = (bb_mid + self.bb_std * bb_std).values
         df["bb_lower"] = (bb_mid - self.bb_std * bb_std).values
-        bb_mid_vals = bb_mid.values
+        bb_mid_vals = bb_mid.values.copy()
         bb_mid_vals[bb_mid_vals == 0] = np.nan
         df["bb_width"] = (df["bb_upper"].values - df["bb_lower"].values) / bb_mid_vals
 
         if "vwap" in df.columns:
-            vwap = df["vwap"].values.astype(float)
+            vwap = df["vwap"].values.copy().astype(float)
             vwap[vwap == 0] = np.nan
             df["vwap_distance"] = (close.values - vwap) / vwap * 100
         else:
@@ -187,7 +187,7 @@ class TechnicalSignal:
 
         df["ema_fast"] = close.ewm(span=self.ema_fast, adjust=False).mean().values
         df["ema_slow"] = close.ewm(span=self.ema_slow, adjust=False).mean().values
-        vol_ma = df["volume"].rolling(20).mean().values
+        vol_ma = df["volume"].rolling(20).mean().values.copy()
         vol_ma[vol_ma == 0] = np.nan
         df["volume_ratio"] = df["volume"].values / vol_ma
 

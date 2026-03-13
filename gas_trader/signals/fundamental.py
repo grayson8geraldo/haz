@@ -38,19 +38,35 @@ class FundamentalSignal:
         consensus_change: float = 0.0,
     ) -> FundamentalIndicators:
         """Compute fundamental indicators from all data sources."""
+        surprise = 0.0
+        storage_signal = 0.0
+        hdd_deviation = 0.0
+        hdd_signal = 0.0
+        sd_signal = 0.0
+
         # 1. Storage surprise
-        report = eia.get_latest_report()
-        actual_change = report.get("change_bcf", 0.0)
-        surprise = eia.compute_surprise(actual_change, consensus_change)
-        storage_signal = self._storage_to_signal(surprise)
+        try:
+            report = eia.get_latest_report()
+            actual_change = report.get("change_bcf", 0.0)
+            surprise = eia.compute_surprise(actual_change, consensus_change)
+            storage_signal = self._storage_to_signal(surprise)
+        except Exception as e:
+            logger.debug(f"Storage signal error: {e}")
 
         # 2. HDD / Weather
-        hdd_data: HDDData = weather.fetch_current_hdd()
-        hdd_signal = self._hdd_to_signal(hdd_data.hdd_deviation_pct)
+        try:
+            hdd_data: HDDData = weather.fetch_current_hdd()
+            hdd_deviation = hdd_data.hdd_deviation_pct
+            hdd_signal = self._hdd_to_signal(hdd_deviation)
+        except Exception as e:
+            logger.debug(f"Weather signal error: {e}")
 
         # 3. Supply/demand balance
-        sd_balance = lng.get_supply_demand_balance()
-        sd_signal = sd_balance["signal"]
+        try:
+            sd_balance = lng.get_supply_demand_balance()
+            sd_signal = sd_balance["signal"]
+        except Exception as e:
+            logger.debug(f"Supply/demand signal error: {e}")
 
         # Composite
         weights = [0.45, 0.35, 0.20]  # storage, weather, supply-demand
@@ -64,7 +80,7 @@ class FundamentalSignal:
         return FundamentalIndicators(
             storage_surprise_bcf=surprise,
             storage_signal=storage_signal,
-            hdd_deviation_pct=hdd_data.hdd_deviation_pct,
+            hdd_deviation_pct=hdd_deviation,
             hdd_signal=hdd_signal,
             supply_demand_signal=sd_signal,
             composite_signal=float(np.clip(composite, -1, 1)),

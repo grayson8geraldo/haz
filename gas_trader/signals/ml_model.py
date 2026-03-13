@@ -95,7 +95,6 @@ class MLSignal:
                 colsample_bytree=0.8,
                 reg_alpha=0.1,
                 reg_lambda=1.0,
-                use_label_encoder=False,
                 eval_metric="logloss",
                 random_state=42,
             )

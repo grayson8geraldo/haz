@@ -229,6 +229,8 @@ class GasFuturesTrader:
                     if position:
                         self.risk_mgr.register_position({"id": position.id})
                         self.telegram.alert_trade_open(position, signal)
+                else:
+                    logger.info(f"Signal rejected: {pos_size.rejection_reason}")
 
         # 6. Periodic logging (every 5 minutes)
         if self._tick_count % 5 == 0:

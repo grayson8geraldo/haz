@@ -40,6 +40,7 @@ class RiskManager:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.risk = settings.risk
+        self.paper_mode = settings.mode == "paper"
         self._daily = DailyStats()
         self._equity_peak = settings.initial_capital
         self._open_positions: list = []
@@ -105,17 +106,27 @@ class RiskManager:
 
         # Verify margin
         margin_required = contracts * instrument.margin_initial
-        if margin_required > current_equity * 0.80:
-            # Reduce to fit within 80% of equity
-            contracts = max(1, int((current_equity * 0.80) / instrument.margin_initial))
-            margin_required = contracts * instrument.margin_initial
+        if self.paper_mode:
+            # Paper mode: allow 1 contract regardless of margin
+            # Scale P&L proportionally but let the strategy trade
+            contracts = 1
+            margin_required = instrument.margin_initial
+            if margin_required > current_equity:
+                logger.debug(
+                    f"Paper mode: margin ${margin_required:.0f} > equity ${current_equity:.0f} "
+                    f"— allowing 1 contract for strategy testing"
+                )
+        else:
+            if margin_required > current_equity * 0.80:
+                contracts = max(1, int((current_equity * 0.80) / instrument.margin_initial))
+                margin_required = contracts * instrument.margin_initial
 
-        if margin_required > current_equity:
-            return PositionSize(
-                contracts=0, risk_amount=0, margin_required=margin_required,
-                risk_reward_ratio=0, approved=False,
-                rejection_reason=f"Insufficient margin: need ${margin_required:.0f}, have ${current_equity:.0f}",
-            )
+            if margin_required > current_equity:
+                return PositionSize(
+                    contracts=0, risk_amount=0, margin_required=margin_required,
+                    risk_reward_ratio=0, approved=False,
+                    rejection_reason=f"Insufficient margin: need ${margin_required:.0f}, have ${current_equity:.0f}",
+                )
 
         # Actual risk
         actual_risk = contracts * risk_per_contract

@@ -162,13 +162,33 @@ class GasFuturesTrader:
 
         # 2. Check if trading is allowed
         if not self.risk_mgr.is_trading_allowed:
-            logger.info(f"Trading halted: {self.risk_mgr.daily_stats.halt_reason}")
-            return
+            if self.settings.mode == "paper":
+                # Paper mode: auto-reset on new day instead of permanent halt
+                if self.risk_mgr.daily_stats.date != dt.date.today():
+                    logger.info("Paper mode: new day — resetting daily halt")
+                    self.risk_mgr._daily = self.risk_mgr._daily.__class__(
+                        peak_equity=self.equity
+                    )
+                else:
+                    logger.info(f"Trading halted: {self.risk_mgr.daily_stats.halt_reason}")
+                    return
+            else:
+                logger.info(f"Trading halted: {self.risk_mgr.daily_stats.halt_reason}")
+                return
 
         # 3. Get current price
         current_price = self.market.get_latest_price(inst)
         if current_price <= 0:
             logger.debug("No price available — skipping tick")
+            return
+
+        # SAFETY: Never execute trades or update positions on synthetic data
+        price_is_real = self.market.last_price_is_real
+        if not price_is_real and self.executor.get_open_positions():
+            logger.warning(
+                "Synthetic price detected with open positions — "
+                "skipping position updates to prevent fake SL/TP triggers"
+            )
             return
 
         # 4. Update open positions
@@ -214,8 +234,8 @@ class GasFuturesTrader:
 
         self.equity_curve.append(self.equity)
 
-        # 5. Generate new signal (only if no open positions)
-        if not self.executor.get_open_positions():
+        # 5. Generate new signal (only if no open positions and real data)
+        if not self.executor.get_open_positions() and price_is_real:
             signal = self.signal_engine.generate_signal(
                 self.market, self.eia, self.weather, self.lng,
             )

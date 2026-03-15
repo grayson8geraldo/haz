@@ -31,6 +31,7 @@ class MarketDataFeed:
         self._cache_ttl = 60  # seconds
         self._ib = None
         self._data_source = "none"  # Track which source is active
+        self._last_price_is_real = False  # Was the last price from real data?
 
     # ------------------------------------------------------------------
     # Connection
@@ -138,8 +139,14 @@ class MarketDataFeed:
         else:
             df = self.fetch_bars(timeframe="1m", days=1, instrument=instrument, force_refresh=True)
         if df.empty:
+            self._last_price_is_real = False
             return 0.0
         return float(df["close"].iloc[-1])
+
+    @property
+    def last_price_is_real(self) -> bool:
+        """True if the most recent price came from real market data (not synthetic)."""
+        return self._last_price_is_real
 
     def get_realtime_quote(self) -> dict:
         """Get a real-time (or near real-time) quote."""
@@ -236,6 +243,7 @@ class MarketDataFeed:
 
             if hist.empty:
                 logger.warning(f"yfinance returned empty data for {self.yf_ticker}")
+                self._last_price_is_real = False
                 return self._generate_synthetic(days, timeframe)
 
             # Clean: flatten MultiIndex, remove dupes, strip tz
@@ -274,10 +282,12 @@ class MarketDataFeed:
                 f"Fetched {len(df)} bars from Yahoo Finance "
                 f"({self.yf_ticker} {timeframe}, {actual_days}d)"
             )
+            self._last_price_is_real = True
             return df
 
         except Exception as e:
             logger.error(f"yfinance fetch error: {e}")
+            self._last_price_is_real = False
             return self._generate_synthetic(days, timeframe)
 
     # ------------------------------------------------------------------

@@ -70,6 +70,16 @@ class OrderExecutor:
         self._orders: dict[str, Order] = {}
         self._paper_mode = settings.mode == "paper"
 
+        # Paper mode P&L scaling: when equity < margin, scale P&L so
+        # a full stop loss risks at most risk_per_trade% of equity
+        inst = settings.select_instrument(settings.initial_capital)
+        margin = inst.margin_initial
+        equity = settings.initial_capital
+        if self._paper_mode and equity < margin:
+            self._pnl_scale = equity / margin
+        else:
+            self._pnl_scale = 1.0
+
     def connect(self) -> None:
         if self._paper_mode:
             logger.info("Running in PAPER mode — no live broker connection")
@@ -139,8 +149,12 @@ class OrderExecutor:
             current_stop=signal.stop_loss,
         )
         self._positions[pos_id] = position
+
+        scale_info = ""
+        if self._pnl_scale < 1.0:
+            scale_info = f" (P&L scaled {self._pnl_scale:.0%})"
         logger.info(f"[PAPER] Opened position {pos_id}: {position.direction.name} "
-                     f"{position.quantity}x @ {position.entry_price:.4f}")
+                     f"{position.quantity}x @ {position.entry_price:.4f}{scale_info}")
         return position
 
     def _live_execute(
@@ -237,11 +251,11 @@ class OrderExecutor:
         if not pos or not pos.is_open:
             return None
 
-        # Calculate unrealized P&L
+        # Calculate unrealized P&L (scaled for paper mode small accounts)
         if pos.direction == TradeDirection.LONG:
-            pos.pnl = (current_price - pos.entry_price) * instrument.point_value * pos.quantity
+            pos.pnl = (current_price - pos.entry_price) * instrument.point_value * pos.quantity * self._pnl_scale
         else:
-            pos.pnl = (pos.entry_price - current_price) * instrument.point_value * pos.quantity
+            pos.pnl = (pos.entry_price - current_price) * instrument.point_value * pos.quantity * self._pnl_scale
 
         # Check stop loss
         if pos.direction == TradeDirection.LONG and current_price <= pos.current_stop:
@@ -263,9 +277,9 @@ class OrderExecutor:
     ) -> float:
         pos = self._positions[pos_id]
         if pos.direction == TradeDirection.LONG:
-            pnl = (exit_price - pos.entry_price) * instrument.point_value * pos.quantity
+            pnl = (exit_price - pos.entry_price) * instrument.point_value * pos.quantity * self._pnl_scale
         else:
-            pnl = (pos.entry_price - exit_price) * instrument.point_value * pos.quantity
+            pnl = (pos.entry_price - exit_price) * instrument.point_value * pos.quantity * self._pnl_scale
 
         # Subtract commission
         commission = self.settings.raw.get("backtest", {}).get("commission_per_trade", 2.50)
